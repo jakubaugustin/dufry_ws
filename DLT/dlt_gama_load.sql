@@ -1,0 +1,76 @@
+-- Databricks notebook source
+CREATE OR REFRESH STREAMING LIVE TABLE gamma_bronze
+AS SELECT 
+  *
+  , current_date() load_date
+FROM cloud_files(
+  "abfss://data@dufryworkshop.dfs.core.windows.net/gamma/",
+  "csv",
+  map("header", "true", "delimiter", ";", "inferSchema", "true")
+)
+
+-- COMMAND ----------
+
+CREATE STREAMING LIVE TABLE gamma_silver(
+  -- CONSTRAINT valid_REAL_DATE_OF_SALE EXPECT(REGEXP_LIKE(`REAL_DATE_OF_SALE`, '(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])')) ON VIOLATION DROP ROW
+  CONSTRAINT REAL_DATE_OF_SALE_not_empty EXPECT(`REAL_DATE_OF_SALE` IS NOT NULL) ON VIOLATION DROP ROW,
+  CONSTRAINT LOCAL_ITEM_CODE_not_empty EXPECT(`LOCAL_ITEM_CODE` IS NOT NULL) ON VIOLATION DROP ROW
+)
+COMMENT "Cleansed and validated gamma data"
+AS SELECT
+TO_DATE(g.`REAL_DATE_OF_SALE`, 'yyyyMMdd') AS `REAL_DATE_OF_SALE`,
+g.`TIME_OF_SALE`,
+g.`GLOBAL_COMPANY_ID`,
+g.`LOCAL_STORE_CODE`,
+g.`SALES_RECEIPT_NUMBER`,
+g.`SEQUENCE_NUMBER`,
+g.`SALES_RECEIPT_LINE`,
+g.`LOCAL_ITEM_CODE`,
+g.`NATIONALITY_CODE`,
+g.`DESTINATION_CODE`,
+g.`AIRLINE_CODE`,
+g.`FLIGHT_NUMBER_CODE`,
+g.`GENDER_CODE`,
+g.`TRANSACTION_CURRENCY_CODE`,
+g.`TAX_STATUS_CODE`,
+CASE WHEN UPPER(g.`ADV_CODE`) = 'NULL' THEN NULL ELSE g.`ADV_CODE` END AS `ADV_CODE`,
+g.`LOYALTY_CODE`,
+g.`SALES_QUANTITY`,
+g.`NET_SALES_VALUE`,
+g.`VAT_VALUE`,
+g.`DISCOUNT_VALUE`,
+g.`VOUCHER_ISSUED_FLAG`,
+g.`VOUCHER_USED_FLAG`,
+li.`GLOBAL_ITEM_CODE`
+
+FROM STREAM(live.gamma_bronze) g
+LEFT JOIN live.gamma_local_item_to_local_silver li
+  ON g.`LOCAL_ITEM_CODE` = li.`LOCAL_ITEM_CODE`;
+
+-- COMMAND ----------
+
+CREATE STREAMING LIVE TABLE gamma_transactions_silver
+AS SELECT
+
+  s.`REAL_DATE_OF_SALE` AS `SALES_DATE`
+  , s.`TIME_OF_SALE` AS `SALES_TIME`
+  , s.`GLOBAL_COMPANY_ID` AS `COMP_CODE`
+  , CONCAT(
+      date_format(s.`REAL_DATE_OF_SALE`, 'yyyy_MM_dd')
+      , '_'
+      , s.`TIME_OF_SALE`
+      , '_'
+      ,  s.`LOCAL_STORE_CODE`
+      , '_'
+      , s.`SALES_RECEIPT_NUMBER`) AS `RECEIPT_NUMBER`
+  , s.`SALES_RECEIPT_LINE` AS `ITEM_LN_NUMBER`
+  , s.`GLOBAL_ITEM_CODE` AS `ITEM_CODE`
+  , s.`NATIONALITY_CODE` AS `PAX_NATIONALITY`
+  , s.`DESTINATION_CODE` AS `PAX_DESTINATION`
+  , s.`AIRLINE_CODE` AS `AIRLINE_CODE`
+  , s.`FLIGHT_NUMBER_CODE` AS `FLIGHT_CODE`
+  , s.`GENDER_CODE` AS `PAX_GENDER`
+  , 'GAMMA' AS `SOURCE_SYSTEM`
+
+FROM
+  STREAM(live.gamma_silver) s
