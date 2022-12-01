@@ -53,6 +53,21 @@ LEFT JOIN live.gamma_local_item_to_local_silver li
 
 -- COMMAND ----------
 
+CREATE OR REFRESH STREAMING LIVE TABLE gamma_silver_merge;
+
+APPLY CHANGES INTO
+  live.gamma_silver_merge
+FROM
+  stream(live.gamma_silver)
+KEYS
+  (BK_HASH)
+SEQUENCE BY
+  INPUT_FILE
+STORED AS
+  SCD TYPE 1;
+
+-- COMMAND ----------
+
 CREATE STREAMING LIVE TABLE gamma_transactions_silver
 AS SELECT
 
