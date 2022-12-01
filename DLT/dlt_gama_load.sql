@@ -2,7 +2,8 @@
 CREATE OR REFRESH STREAMING LIVE TABLE gamma_bronze
 AS SELECT 
   *
-  , current_date() load_date
+  , current_date() as `LOAD_DATE`
+  , input_file_name() as `INPUT_FILE`
 FROM cloud_files(
   "abfss://data@dufryworkshop.dfs.core.windows.net/gamma/",
   "csv",
@@ -18,6 +19,7 @@ CREATE STREAMING LIVE TABLE gamma_silver(
 )
 COMMENT "Cleansed and validated gamma data"
 AS SELECT
+SHA2(CONCAT(g.`REAL_DATE_OF_SALE`, '_', g.`TIME_OF_SALE`, '_', g.`LOCAL_STORE_CODE`, '_', g.`SALES_RECEIPT_NUMBER`, '_', g.`SEQUENCE_NUMBER`, '_', g.`SALES_RECEIPT_LINE`, '_', g.`LOCAL_ITEM_CODE`), 256) AS `BK_HASH`,
 TO_DATE(g.`REAL_DATE_OF_SALE`, 'yyyyMMdd') AS `REAL_DATE_OF_SALE`,
 g.`TIME_OF_SALE`,
 g.`GLOBAL_COMPANY_ID`,
@@ -41,6 +43,8 @@ g.`VAT_VALUE`,
 g.`DISCOUNT_VALUE`,
 g.`VOUCHER_ISSUED_FLAG`,
 g.`VOUCHER_USED_FLAG`,
+g.`LOAD_DATE`,
+g.`INPUT_FILE`,
 li.`GLOBAL_ITEM_CODE`
 
 FROM STREAM(live.gamma_bronze) g
